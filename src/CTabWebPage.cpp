@@ -227,6 +227,8 @@ generate(CFile &file)
     }
   };
 
+  int skipN = 0;
+
   using NameValues = std::map<std::string, std::string>;
 
   auto decodeNameValues = [](const std::string &str, NameValues &nameValues) {
@@ -285,18 +287,45 @@ generate(CFile &file)
 
   using Tabs = std::vector<TabData *>;
 
-  Lines    startLines, endLines;
-  Tabs     tabs;
-  TabData *currentTab = nullptr;
-  DocPart  docPart { DocPart::BODY_START };
+  Lines       startLines, endLines;
+  Tabs        tabs;
+  TabData*    currentTab = nullptr;
+  DocPart     docPart { DocPart::BODY_START };
+  std::string tabTitle;
 
   for (const auto &line : lines) {
-    // start head lines
-    if (line == "<!-- CTAB_HEAD -->") {
-      docPart = DocPart::HEAD;
-      currentTab = nullptr;
+    if (skipN > 0) {
+      --skipN;
       continue;
     }
+
+    //---
+
+    int len = line.length();
+
+    //---
+
+    // start head lines
+    if (len > 19 && line.substr(0, 15) == "<!-- CTAB_HEAD:" && line.substr(len - 4) == " -->") {
+      auto nameValuesStr = line.substr(15, len - 18);
+
+      NameValues nameValues;
+
+      decodeNameValues(nameValuesStr, nameValues);
+
+      auto title = getNameValue("title", nameValues);
+
+      if (title != "")
+        tabTitle = title;
+
+      docPart = DocPart::HEAD;
+
+      currentTab = nullptr;
+
+      continue;
+    }
+
+    //---
 
     // start tail lines
     if (line == "<!-- CTAB_TAIL -->") {
@@ -321,7 +350,27 @@ generate(CFile &file)
 
     //---
 
-    int len = line.length();
+    if (len >= 18 && line.substr(0, 15) == "<!-- CTAB_SKIP " && line.substr(len - 4) == " -->") {
+      auto countStr = line.substr(15, len - 18);
+
+      if (countStr == "")
+        skipN = 1;
+      else {
+        try {
+          skipN = stoi(countStr);
+        }
+        catch (...) {
+          skipN = -1;
+        }
+
+        if (skipN <= 0)
+          errMsg(strConcat("Invalid skip value '", countStr, "'"));
+      }
+
+      continue;
+    }
+
+    //---
 
     // start tab lines
     if (len > 14 && line.substr(0, 10) == "<!-- CTAB:" && line.substr(len - 4) == " -->") {
@@ -401,6 +450,9 @@ generate(CFile &file)
   for (const auto &line : startLines)
     std::cout << line << "\n";
 
+  if (tabTitle != "")
+    std::cout << "<h2>" << tabTitle << "</h2>\n";
+
   if      (type() == Type::TAB) {
     std::cout << "<!-- Tab buttons -->\n";
     std::cout << "<div class=\"tab\">\n";
@@ -432,7 +484,8 @@ generate(CFile &file)
 
     for (const auto &tab : tabs) {
       std::cout << "<div id=\"" << tab->name << "\" class=\"tabcontent\">\n";
-      std::cout << "<h3>" << tab->name << "</h3>\n";
+
+      //std::cout << "<h3>" << tab->name << "</h3>\n";
 
       for (const auto &line1 : tab->lines)
         std::cout << line1 << "\n";
