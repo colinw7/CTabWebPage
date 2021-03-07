@@ -22,6 +22,7 @@ CPPFLAGS = \
 -I. \
 -I$(INC_DIR) \
 -I../../CFile/include \
+-I../../CStrUtil/include \
 
 LFLAGS = \
 -L$(LIB_DIR) \

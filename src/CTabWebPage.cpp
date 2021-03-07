@@ -276,15 +276,54 @@ generate(CFile &file)
     return (*p).second;
   };
 
+  enum class DocPart {
+    HEAD,
+    BODY_START,
+    BODY_END,
+    TAIL
+  };
+
   using Tabs = std::vector<TabData *>;
 
-  Lines    preLines, postLines;
+  Lines    startLines, endLines;
   Tabs     tabs;
   TabData *currentTab = nullptr;
+  DocPart  docPart { DocPart::BODY_START };
 
   for (const auto &line : lines) {
+    // start head lines
+    if (line == "<!-- CTAB_HEAD -->") {
+      docPart = DocPart::HEAD;
+      currentTab = nullptr;
+      continue;
+    }
+
+    // start tail lines
+    if (line == "<!-- CTAB_TAIL -->") {
+      docPart = DocPart::TAIL;
+      currentTab = nullptr;
+      continue;
+    }
+
+    // start body lines
+    if (line == "<!-- CTAB_BODY -->") {
+      if      (docPart == DocPart::HEAD)
+        docPart = DocPart::BODY_START;
+      else if (docPart == DocPart::TAIL)
+        errMsg("Can't have body contents after tail");
+      else
+        docPart = DocPart::BODY_END;
+
+      currentTab = nullptr;
+
+      continue;
+    }
+
+    //---
+
     int len = line.length();
 
+    // start tab lines
     if (len > 14 && line.substr(0, 10) == "<!-- CTAB:" && line.substr(len - 4) == " -->") {
       auto nameValuesStr = line.substr(10, len - 13);
 
@@ -350,10 +389,17 @@ generate(CFile &file)
     else {
       if (currentTab)
         currentTab->lines.push_back(line);
-      else
-        preLines.push_back(line);
+      else {
+        if      (docPart == DocPart::BODY_START)
+          startLines.push_back(line);
+        else if (docPart == DocPart::BODY_END)
+          endLines.push_back(line);
+      }
     }
   }
+
+  for (const auto &line : startLines)
+    std::cout << line << "\n";
 
   if      (type() == Type::TAB) {
     std::cout << "<!-- Tab buttons -->\n";
@@ -468,4 +514,7 @@ generate(CFile &file)
 
     std::cout << "</div> \n";
   }
+
+  for (const auto &line : endLines)
+    std::cout << line << "\n";
 }
