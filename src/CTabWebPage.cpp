@@ -256,7 +256,7 @@ generate(CFile &file)
 
       std::string value;
 
-      if (parse.isChar('"'))
+      if (parse.isChar('"') || parse.isChar('\''))
         parse.readString(value, /*strip_quotes*/true);
       else {
         int pos2 = parse.getPos();
@@ -293,6 +293,32 @@ generate(CFile &file)
   DocPart     docPart { DocPart::BODY_START };
   std::string tabTitle;
 
+  auto isCommentTag = [](const std::string &line, const std::string &tag,
+                         std::string &nameValuesStr) {
+    auto commentLine = "<!-- " + tag + " -->";
+
+    if (line == commentLine) {
+      nameValuesStr = "";
+      return true;
+    }
+
+    int tagLen  = tag.length();
+    int lineLen = line.length();
+
+    if (lineLen <= tagLen + 10)
+      return false;
+
+    if (line.substr(0, 5) != "<!-- " || line.substr(lineLen - 4) != " -->")
+      return false;
+
+    if (line.substr(5, tagLen) != tag || line[tagLen + 5] != ':')
+      return false;
+
+    nameValuesStr = line.substr(tagLen + 6, lineLen - 9);
+
+    return true;
+  };
+
   for (const auto &line : lines) {
     if (skipN > 0) {
       --skipN;
@@ -301,14 +327,10 @@ generate(CFile &file)
 
     //---
 
-    int len = line.length();
-
-    //---
-
     // start head lines
-    if (len > 19 && line.substr(0, 15) == "<!-- CTAB_HEAD:" && line.substr(len - 4) == " -->") {
-      auto nameValuesStr = line.substr(15, len - 18);
+    std::string nameValuesStr;
 
+    if (isCommentTag(line, "CTAB_HEAD", nameValuesStr)) {
       NameValues nameValues;
 
       decodeNameValues(nameValuesStr, nameValues);
@@ -328,14 +350,14 @@ generate(CFile &file)
     //---
 
     // start tail lines
-    if (line == "<!-- CTAB_TAIL -->") {
+    if (isCommentTag(line, "CTAB_TAIL", nameValuesStr)) {
       docPart = DocPart::TAIL;
       currentTab = nullptr;
       continue;
     }
 
     // start body lines
-    if (line == "<!-- CTAB_BODY -->") {
+    if (isCommentTag(line, "CTAB_BODY", nameValuesStr)) {
       if      (docPart == DocPart::HEAD)
         docPart = DocPart::BODY_START;
       else if (docPart == DocPart::TAIL)
@@ -350,21 +372,19 @@ generate(CFile &file)
 
     //---
 
-    if (len >= 18 && line.substr(0, 15) == "<!-- CTAB_SKIP " && line.substr(len - 4) == " -->") {
-      auto countStr = line.substr(15, len - 18);
-
-      if (countStr == "")
+    if (isCommentTag(line, "CTAB_SKIP", nameValuesStr)) {
+      if (nameValuesStr == "")
         skipN = 1;
       else {
         try {
-          skipN = stoi(countStr);
+          skipN = stoi(nameValuesStr);
         }
         catch (...) {
           skipN = -1;
         }
 
         if (skipN <= 0)
-          errMsg(strConcat("Invalid skip value '", countStr, "'"));
+          errMsg(strConcat("Invalid skip value '", nameValuesStr, "'"));
       }
 
       continue;
@@ -373,9 +393,7 @@ generate(CFile &file)
     //---
 
     // start tab lines
-    if (len > 14 && line.substr(0, 10) == "<!-- CTAB:" && line.substr(len - 4) == " -->") {
-      auto nameValuesStr = line.substr(10, len - 13);
-
+    if (isCommentTag(line, "CTAB_TAB", nameValuesStr)) {
       NameValues nameValues;
 
       decodeNameValues(nameValuesStr, nameValues);
