@@ -1,7 +1,7 @@
-function openTab(pageName, elmnt, color) {
+function openTab(evt, tabName, elmnt, color) {
   // Hide all elements with class="tabcontent" by default */
   var i, tabcontent, tabs;
-  tabcontent = document.getElementsByClassName("tabcontent");
+  tabcontent = document.getElementsByClassName("tab_content");
   for (i = 0; i < tabcontent.length; i++) {
     tabcontent[i].style.display = "none";
   }
@@ -13,12 +13,12 @@ function openTab(pageName, elmnt, color) {
   }
 
   // Show the specific tab content
-  document.getElementById(pageName).style.display = "block";
+  document.getElementById(tabName).style.display = "block";
 
   // Add the specific color to the button used to open the tab content
   elmnt.style.backgroundColor = color;
 
-  contents = document.getElementsByClassName("tabcontent");
+  contents = document.getElementsByClassName("tab_content");
   for (i = 0; i < contents.length; i++) {
     contents[i].style.backgroundColor = color;
   }

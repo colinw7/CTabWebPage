@@ -6,7 +6,7 @@ body, html {
 }
 
 /* Style tab links */
-.tabs {
+.tab_button {
   background-color: #555;
   color: white;
   float: left;
@@ -18,12 +18,12 @@ body, html {
   width: 25%;
 }
 
-.tabs:hover {
+.tab_button:hover {
   background-color: #777;
 }
 
 /* Style the tab content (and add height:100% for full page content) */
-.tabcontent {
+.tab_content {
   background-color: black;
   color: white;
   display: none;

@@ -1,9 +1,10 @@
 #include <CTabWebPage.h>
 #include <CFile.h>
 #include <CStrParse.h>
-#include <map>
+
 #include <iostream>
 #include <sstream>
+#include <cassert>
 
 template <typename T>
 void sstrConcat(std::ostream &o, T t) { // final template
@@ -37,7 +38,6 @@ main(int argc, char **argv)
 
   Files files;
 
-  CTabWebPage::Type        type        = CTabWebPage::Type::TAB;
   CTabWebPage::Orientation orientation = CTabWebPage::Orientation::HORIZONTAL;
 
   std::string title;
@@ -49,25 +49,7 @@ main(int argc, char **argv)
     if (argv[i][0] == '-') {
       auto opt = std::string(&argv[i][1]);
 
-      if      (opt == "type") {
-        ++i;
-
-        if (i < argc) {
-          auto typeName = std::string(argv[i]);
-
-          if      (typeName == "tab")
-            type = CTabWebPage::Type::TAB;
-          else if (typeName == "accordion")
-            type = CTabWebPage::Type::ACCORDION;
-          else if (typeName == "images")
-            type = CTabWebPage::Type::IMAGES;
-          else
-            errMsg(strConcat("Invalid type '", typeName, "'"));
-        }
-        else
-          errMsg("Missing arg for -type");
-      }
-      else if (opt == "orientation" || opt == "orient") {
+      if      (opt == "orientation" || opt == "orient") {
         ++i;
 
         if (i < argc) {
@@ -115,13 +97,10 @@ main(int argc, char **argv)
 
   CTabWebPage page;
 
-  page.setType(type);
   page.setOrientation(orientation);
   page.setTitle(title);
   page.setEmbed(embed);
   page.setFullPage(fullpage);
-
-  page.init();
 
   for (const auto &file : files) {
     CFile f(file);
@@ -129,17 +108,32 @@ main(int argc, char **argv)
     if (! f.exists())
       errMsg(strConcat("'", file, "' does not exist"));
 
-    page.generate(f);
+    page.addFile(f);
   }
 
-  page.term();
+  page.generate();
 
   return 0;
 }
 
+//------
+
 CTabWebPage::
 CTabWebPage()
 {
+}
+
+void
+CTabWebPage::
+generate()
+{
+  init();
+
+  for (const auto &tabFile : tabFiles_) {
+    generateFile(tabFile);
+  }
+
+  term();
 }
 
 void
@@ -155,23 +149,13 @@ init()
       std::cout << "<title>" << title() << "</title>\n";
   }
 
-  if      (type() == Type::TAB) {
-    if (isFullPage()) {
-      if (orientation() == Orientation::HORIZONTAL)
-        std::cout << "<link href=\"full_htabs.css\" rel=\"stylesheet\" type=\"text/css\"/>\n";
-    }
-    else {
-      if (orientation() == Orientation::HORIZONTAL)
-        std::cout << "<link href=\"htabs.css\" rel=\"stylesheet\" type=\"text/css\"/>\n";
-      else
-        std::cout << "<link href=\"vtabs.css\" rel=\"stylesheet\" type=\"text/css\"/>\n";
-    }
-  }
-  else if (type() == Type::ACCORDION) {
-    std::cout << "<link href=\"accordion.css\" rel=\"stylesheet\" type=\"text/css\"/>\n";
-  }
-  else if (type() == Type::IMAGES) {
-    std::cout << "<link href=\"images.css\" rel=\"stylesheet\" type=\"text/css\"/>\n";
+  if (! tabTypeCount_.empty()) {
+    std::cout << "\n";
+
+    for (const auto &pt : tabTypeCount_)
+      addTypeCss(pt.first);
+
+    std::cout << "\n";
   }
 
   if (! isEmbed()) {
@@ -187,16 +171,14 @@ void
 CTabWebPage::
 term()
 {
-  if      (type() == Type::TAB) {
-    if (isFullPage())
-      std::cout << "<script src=\"full_tabs.js\" type=\"text/javascript\"></script>\n";
-    else
-      std::cout << "<script src=\"tabs.js\" type=\"text/javascript\"></script>\n";
+  if (! tabTypeCount_.empty()) {
+    std::cout << "\n";
+
+    for (const auto &pt : tabTypeCount_)
+      addTypeJS(pt.first);
+
+    std::cout << "\n";
   }
-  else if (type() == Type::ACCORDION)
-    std::cout << "<script src=\"accordion.js\" type=\"text/javascript\"></script>\n";
-  else if (type() == Type::IMAGES)
-    std::cout << "<script src=\"images.js\" type=\"text/javascript\"></script>\n";
 
   if (! isEmbed()) {
     std::cout << "</body>\n";
@@ -206,28 +188,69 @@ term()
 
 void
 CTabWebPage::
-generate(CFile &file)
+addTypeCss(Type type)
 {
+  if (! typeCss_[type]) {
+    if      (type == Type::TAB) {
+      if (isFullPage()) {
+        if (orientation() == Orientation::HORIZONTAL)
+          std::cout << "<link href=\"full_htabs.css\" rel=\"stylesheet\" type=\"text/css\"/>\n";
+      }
+      else {
+        if (orientation() == Orientation::HORIZONTAL)
+          std::cout << "<link href=\"htabs.css\" rel=\"stylesheet\" type=\"text/css\"/>\n";
+        else
+          std::cout << "<link href=\"vtabs.css\" rel=\"stylesheet\" type=\"text/css\"/>\n";
+      }
+    }
+    else if (type == Type::ACCORDION) {
+      std::cout << "<link href=\"accordion.css\" rel=\"stylesheet\" type=\"text/css\"/>\n";
+    }
+    else if (type == Type::IMAGE) {
+      std::cout << "<link href=\"images.css\" rel=\"stylesheet\" type=\"text/css\"/>\n";
+    }
+
+    typeCss_[type] = true;
+  }
+}
+
+void
+CTabWebPage::
+addTypeJS(Type type)
+{
+  if (! typeJS_[type]) {
+    if      (type == Type::TAB) {
+      if (isFullPage())
+        std::cout << "<script src=\"full_tabs.js\" type=\"text/javascript\"></script>\n";
+      else
+        std::cout << "<script src=\"tabs.js\" type=\"text/javascript\"></script>\n";
+    }
+    else if (type == Type::ACCORDION)
+      std::cout << "<script src=\"accordion.js\" type=\"text/javascript\"></script>\n";
+    else if (type == Type::IMAGE)
+      std::cout << "<script src=\"images.js\" type=\"text/javascript\"></script>\n";
+
+    typeJS_[type] = true;
+  }
+}
+
+void
+CTabWebPage::
+addFile(CFile &file)
+{
+  currentFile_ = new TabFileData;
+
+  tabFiles_.push_back(currentFile_);
+
+  auto *currentTabGroup = addTabGroup(currentFile_);
+
+  //---
+
   CFile::Lines lines;
 
   file.toLines(lines);
 
-  using Lines = std::vector<std::string>;
-
-  struct TabData {
-    std::string name;
-    std::string desc;
-    std::string color { "white" };
-    Lines       lines;
-
-    TabData() = default;
-
-    explicit TabData(const std::string &name) :
-     name(name) {
-    }
-  };
-
-  int skipN = 0;
+  //---
 
   using NameValues = std::map<std::string, std::string>;
 
@@ -278,23 +301,8 @@ generate(CFile &file)
     return (*p).second;
   };
 
-  enum class DocPart {
-    HEAD,
-    BODY_START,
-    BODY_END,
-    TAIL
-  };
-
-  using Tabs = std::vector<TabData *>;
-
-  Lines       startLines, endLines;
-  Tabs        tabs;
-  TabData*    currentTab = nullptr;
-  DocPart     docPart { DocPart::BODY_START };
-  std::string tabTitle;
-
   auto isCommentTag = [](const std::string &line, const std::string &tag,
-                         std::string &nameValuesStr) {
+                         std::string &matchTag, std::string &nameValuesStr) {
     auto commentLine = "<!-- " + tag + " -->";
 
     if (line == commentLine) {
@@ -314,23 +322,27 @@ generate(CFile &file)
     if (line.substr(5, tagLen) != tag || line[tagLen + 5] != ':')
       return false;
 
+    matchTag      = tag;
     nameValuesStr = line.substr(tagLen + 6, lineLen - 9);
 
     return true;
   };
 
+  //---
+
   for (const auto &line : lines) {
-    if (skipN > 0) {
-      --skipN;
+    if (currentFile_->skipN > 0) {
+      --currentFile_->skipN;
       continue;
     }
 
     //---
 
-    // start head lines
+    std::string matchTag;
     std::string nameValuesStr;
 
-    if (isCommentTag(line, "CTAB_HEAD", nameValuesStr)) {
+    // start head lines
+    if (isCommentTag(line, "CTAB_HEAD", matchTag, nameValuesStr)) {
       NameValues nameValues;
 
       decodeNameValues(nameValuesStr, nameValues);
@@ -338,11 +350,11 @@ generate(CFile &file)
       auto title = getNameValue("title", nameValues);
 
       if (title != "")
-        tabTitle = title;
+        currentFile_->tabTitle = title;
 
-      docPart = DocPart::HEAD;
+      currentFile_->docPart = DocPart::HEAD;
 
-      currentTab = nullptr;
+      currentTabGroup->currentTab = nullptr;
 
       continue;
     }
@@ -350,40 +362,40 @@ generate(CFile &file)
     //---
 
     // start tail lines
-    if (isCommentTag(line, "CTAB_TAIL", nameValuesStr)) {
-      docPart = DocPart::TAIL;
-      currentTab = nullptr;
+    if (isCommentTag(line, "CTAB_TAIL", matchTag, nameValuesStr)) {
+      currentFile_->docPart = DocPart::TAIL;
+      currentTabGroup->currentTab = nullptr;
       continue;
     }
 
     // start body lines
-    if (isCommentTag(line, "CTAB_BODY", nameValuesStr)) {
-      if      (docPart == DocPart::HEAD)
-        docPart = DocPart::BODY_START;
-      else if (docPart == DocPart::TAIL)
+    if (isCommentTag(line, "CTAB_BODY", matchTag, nameValuesStr)) {
+      if      (currentFile_->docPart == DocPart::HEAD)
+        currentFile_->docPart = DocPart::BODY_START;
+      else if (currentFile_->docPart == DocPart::TAIL)
         errMsg("Can't have body contents after tail");
       else
-        docPart = DocPart::BODY_END;
+        currentFile_->docPart = DocPart::BODY_END;
 
-      currentTab = nullptr;
+      currentTabGroup->currentTab = nullptr;
 
       continue;
     }
 
     //---
 
-    if (isCommentTag(line, "CTAB_SKIP", nameValuesStr)) {
+    if (isCommentTag(line, "CTAB_SKIP", matchTag, nameValuesStr)) {
       if (nameValuesStr == "")
-        skipN = 1;
+        currentFile_->skipN = 1;
       else {
         try {
-          skipN = stoi(nameValuesStr);
+          currentFile_->skipN = stoi(nameValuesStr);
         }
         catch (...) {
-          skipN = -1;
+          currentFile_->skipN = -1;
         }
 
-        if (skipN <= 0)
+        if (currentFile_->skipN <= 0)
           errMsg(strConcat("Invalid skip value '", nameValuesStr, "'"));
       }
 
@@ -392,26 +404,53 @@ generate(CFile &file)
 
     //---
 
+    // new tab group
+    if      (isCommentTag(line, "CTAB_GROUP", matchTag, nameValuesStr)) {
+      currentTabGroup = addTabGroup(currentFile_);
+    }
     // start tab lines
-    if (isCommentTag(line, "CTAB_TAB", nameValuesStr)) {
+    else if (isCommentTag(line, "CTAB_TAB"      , matchTag, nameValuesStr) ||
+             isCommentTag(line, "CTAB_ACCORDION", matchTag, nameValuesStr) ||
+             isCommentTag(line, "CTAB_IMAGE"    , matchTag, nameValuesStr)) {
       NameValues nameValues;
 
       decodeNameValues(nameValuesStr, nameValues);
 
-      if      (type() == Type::TAB || type() == Type::ACCORDION) {
+      Type tabType = Type::TAB;
+
+      if      (matchTag == "CTAB_ACCORDION")
+        tabType = Type::ACCORDION;
+      else if (matchTag == "CTAB_IMAGE")
+        tabType = Type::IMAGE;
+
+      if      (tabType == Type::TAB || tabType == Type::ACCORDION) {
         auto tabName = getNameValue("name", nameValues);
 
         if (tabName == "")
-          tabName = strConcat("Tab", tabs.size() + 1);
+          tabName = strConcat("Tab", currentTabGroup->tabs.size() + 1);
 
+        //---
+
+        // get contents filename
         auto fileName = getNameValue("file", nameValues);
 
+        //---
+
+        // get color
         auto colorName = getNameValue("color", nameValues);
 
         if (colorName == "")
           colorName = "white";
 
-        auto *tab = new TabData(tabName);
+        //---
+
+        auto mouseOverStr = getNameValue("mouseOver", nameValues);
+
+        bool mouseOver = (mouseOverStr == "1" || mouseOverStr == "true" || mouseOverStr == "yes");
+
+        //---
+
+        auto *tab = addTab(currentTabGroup, tabName, tabType);
 
         tab->color = colorName;
 
@@ -429,11 +468,9 @@ generate(CFile &file)
             tab->lines.push_back(line1);
         }
 
-        tabs.push_back(tab);
-
-        currentTab = tab;
+        tab->mouseOver = mouseOver;
       }
-      else if (type() == Type::IMAGES) {
+      else if (tabType == Type::IMAGE) {
         auto imageName = getNameValue("image", nameValues);
 
         if (imageName == "")
@@ -444,148 +481,216 @@ generate(CFile &file)
         if (desc == "")
           desc = imageName;
 
-        auto *tab = new TabData(imageName);
+        auto *tab = addTab(currentTabGroup, imageName, Type::IMAGE);
 
         tab->desc = desc;
-
-        tabs.push_back(tab);
-
-        currentTab = tab;
       }
     }
     else {
-      if (currentTab)
-        currentTab->lines.push_back(line);
+      if (currentTabGroup->currentTab)
+        currentTabGroup->currentTab->lines.push_back(line);
       else {
-        if      (docPart == DocPart::BODY_START)
-          startLines.push_back(line);
-        else if (docPart == DocPart::BODY_END)
-          endLines.push_back(line);
+        if      (currentFile_->docPart == DocPart::BODY_START)
+          currentFile_->startLines.push_back(line);
+        else if (currentFile_->docPart == DocPart::BODY_END)
+          currentFile_->endLines.push_back(line);
       }
     }
   }
+}
 
-  for (const auto &line : startLines)
+CTabWebPage::TabGroupData *
+CTabWebPage::
+addTabGroup(TabFileData *fileData)
+{
+  fileData->currentTabGroup = new TabGroupData;
+
+  fileData->currentTabGroup->id = ++groupCount_;
+
+  fileData->tabGroups.push_back(fileData->currentTabGroup);
+
+  return fileData->currentTabGroup;
+}
+
+CTabWebPage::TabData *
+CTabWebPage::
+addTab(TabGroupData *tabGroup, const std::string &tabName, Type tabType)
+{
+  auto *tab = new TabData(tabName);
+
+  tab->type = tabType;
+
+  tab->id = ++tabCount_;
+
+  tabGroup->tabs.push_back(tab);
+
+  tabTypeCount_[tab->type]++;
+
+  tabGroup->currentTab = tab;
+
+  return tab;
+}
+
+void
+CTabWebPage::
+generateFile(TabFileData *fileData)
+{
+  for (const auto &line : fileData->startLines)
     std::cout << line << "\n";
 
-  if (tabTitle != "")
-    std::cout << "<h2>" << tabTitle << "</h2>\n";
+  if (fileData->tabTitle != "")
+    std::cout << "<h2>" << fileData->tabTitle << "</h2>\n";
 
-  if      (type() == Type::TAB) {
-    std::cout << "<!-- Tab buttons -->\n";
-    std::cout << "<div class=\"tab\">\n";
+  //---
 
-    bool first = true;
+  int numSlides = 0;
 
-    for (const auto &tab : tabs) {
-      std::cout << "  <button class=\"tabs\"";
+  for (const auto &tabGroup : fileData->tabGroups) {
+    if (tabGroup->tabs.empty())
+      continue;
 
-      if (type() == Type::TAB) {
-        if (isFullPage())
-          std::cout << " onclick=\"openTab('" << tab->name << "', this, '" << tab->color << "')\"";
-        else
-          std::cout << " onclick=\"openTab(event, '" << tab->name << "')\"";
+    auto type = tabGroup->tabs[0]->type;
+
+    if      (type == Type::TAB) {
+      std::cout << "\n";
+      std::cout << "<!-- Tab buttons -->\n";
+      std::cout << "<div class=\"tab_buttons\">\n";
+
+      bool firstTab = true;
+
+      for (const auto &tab : tabGroup->tabs) {
+        if (tab->type != Type::TAB)
+          continue;
+
+        std::cout << "  <button class=\"tab_button\"";
+
+        if (! tab->mouseOver) {
+          if (isFullPage())
+            std::cout << " onclick=\"openTab(event, '" << tab->name <<
+                                             "', this, '" << tab->color << "')\"";
+          else
+            std::cout << " onclick=\"openTab(event, '" << tab->name <<
+                                             "', this, '" << tab->color << "')\"";
+        }
+        else {
+          std::cout << " onmouseover=\"openTab(event, '" << tab->name <<
+                                             "', this, '" << tab->color << "')\"";
+        }
+
+        if (firstTab)
+          std::cout << " id=\"defaultOpen\"";
+
+        std::cout << ">" << tab->name << "</button>\n";
+
+        firstTab = false;
       }
 
-      if (first)
-        std::cout << " id=\"defaultOpen\"";
-
-      std::cout << ">" << tab->name << "</button>\n";
-
-      first = false;
-    }
-
-    std::cout << "</div>\n";
-
-    std::cout << "\n";
-    std::cout << "<!-- Tab content -->\n";
-
-    for (const auto &tab : tabs) {
-      std::cout << "<div id=\"" << tab->name << "\" class=\"tabcontent\">\n";
-
-      //std::cout << "<h3>" << tab->name << "</h3>\n";
-
-      for (const auto &line1 : tab->lines)
-        std::cout << line1 << "\n";
-
       std::cout << "</div>\n";
-    }
 
-    std::cout << "\n";
+      std::cout << "\n";
+      std::cout << "<!-- Tab content -->\n";
 
-    //std::cout << "<script>\n";
-    //std::cout << "document.getElementById(\"defaultOpen\").click();\n";
-    //std::cout << "</script>\n";
-  }
-  else if (type() == Type::ACCORDION) {
-    bool first = true;
+      for (const auto &tab : tabGroup->tabs) {
+        if (tab->type != Type::TAB)
+          continue;
 
-    std::cout << "<!-- Tab buttons and content -->\n";
+        std::cout << "<div id=\"" << tab->name << "\" class=\"tab_content\">\n";
 
-    for (const auto &tab : tabs) {
-      std::cout << "<button class=\"accordion\"";
+        //std::cout << "<h3>" << tab->name << "</h3>\n";
 
-      if (first)
-        std::cout << " id=\"defaultOpen\"";
+        for (const auto &line1 : tab->lines)
+          std::cout << line1 << "\n";
 
-      std::cout << ">" << tab->name << "</button>\n";
+        std::cout << "</div>\n";
+      }
 
-      first = false;
-
-      //---
-
-      std::cout << "<div class=\"panel\">\n";
-
-      for (const auto &line1 : tab->lines)
-        std::cout << line1 << "\n";
-
-      std::cout << "</div>\n";
-    }
-
-    //std::cout << "\n";
-    //std::cout << "<script>\n";
-    //std::cout << "document.getElementById(\"defaultOpen\").click();\n";
-    //std::cout << "</script>\n";
-  }
-  else if (type() == Type::IMAGES) {
-    std::cout << "<!-- Slideshow container -->\n";
-    std::cout << "<div class=\"slideshow-container\">\n";
-    std::cout << "\n";
-    std::cout << "  <!-- Full-width images with number and caption text -->\n";
-
-    int n = tabs.size();
-
-    int i = 1;
-
-    for (const auto &tab : tabs) {
-      std::cout << "  <div class=\"mySlides fade\">\n";
-      std::cout << "    <div class=\"numbertext\">" << i << " / " << n << "</div>\n";
-      std::cout << "    <img src=\"" << tab->name << "\" style=\"width:100%\">\n";
-      std::cout << "    <div class=\"text\">" << tab->desc << "</div>\n";
-      std::cout << "  </div>\n";
       std::cout << "\n";
 
-      ++i;
+      //std::cout << "<script>\n";
+      //std::cout << "document.getElementById(\"defaultOpen\").click();\n";
+      //std::cout << "</script>\n";
     }
+    else if (type == Type::ACCORDION) {
+      bool firstAccordian = true;
 
-    std::cout << "  <!-- Next and previous buttons -->\n";
-    std::cout << "  <a class=\"prev\" onclick=\"plusSlides(-1)\">&#10094;</a>\n";
-    std::cout << "  <a class=\"next\" onclick=\"plusSlides(1)\">&#10095;</a>\n";
-    std::cout << "</div>\n";
-    std::cout << "<br>\n";
-    std::cout << "\n";
-    std::cout << "<!-- The dots/circles -->\n";
-    std::cout << "<div style=\"text-align:center\">\n";
+      std::cout << "<!-- Tab buttons and content -->\n";
 
-    i = 1;
+      for (const auto &tab : tabGroup->tabs) {
+        if (tab->type != Type::ACCORDION)
+          continue;
 
-    for ( ; i <= n; ++i) {
-      std::cout << "  <span class=\"dot\" onclick=\"currentSlide(" << i << ")\"></span>\n";
+        std::cout << "<button class=\"accordion_button\"";
+
+        if (firstAccordian)
+          std::cout << " id=\"defaultOpen\"";
+
+        std::cout << ">" << tab->name << "</button>\n";
+
+        firstAccordian = false;
+
+        //---
+
+        std::cout << "<div class=\"accordian_panel\">\n";
+
+        for (const auto &line1 : tab->lines)
+          std::cout << line1 << "\n";
+
+        std::cout << "</div>\n";
+      }
     }
+    else if (type == Type::IMAGE) {
+      ++numSlides;
 
-    std::cout << "</div> \n";
+      std::cout << "\n";
+      std::cout << "<!-- Image container -->\n";
+      std::cout << "<div class=\"image_container\">\n";
+      std::cout << "\n";
+      std::cout << "<!-- Full-width images with number and caption text -->\n";
+
+      int n = tabGroup->tabs.size();
+
+      int i = 1;
+
+      std::string slidesName = strConcat("image_slides_", numSlides);
+
+      for (const auto &tab : tabGroup->tabs) {
+        std::cout << "<div class=\"" << slidesName << " image_slides image_fade\">\n";
+        std::cout << "  <div class=\"image_number\">" << i << " / " << n << "</div>\n";
+        std::cout << "  <img src=\"" << tab->name << "\" style=\"width:100%\">\n";
+        std::cout << "  <div class=\"image_text\">" << tab->desc << "</div>\n";
+        std::cout << "</div>\n";
+        std::cout << "\n";
+
+        ++i;
+      }
+
+      std::string plusFnName  = strConcat("plusSlides(", numSlides, ", 1)");
+      std::string minusFnName = strConcat("plusSlides(", numSlides, ", -1)");
+
+      std::cout << "<!-- Next and previous buttons -->\n";
+      std::cout << "<a class=\"image_prev\" onclick=\"" << plusFnName << "\">&#10094;</a>\n";
+      std::cout << "<a class=\"image_next\" onclick=\"" << plusFnName << "\">&#10095;</a>\n";
+      std::cout << "</div>\n";
+      std::cout << "<br>\n";
+      std::cout << "\n";
+      std::cout << "<!-- The dots/circles -->\n";
+      std::cout << "<div style=\"text-align:center\">\n";
+
+      std::string dotName = strConcat("image_dot_", numSlides);
+
+      i = 1;
+
+      for ( ; i <= n; ++i) {
+        std::string slideFnName = strConcat("currentSlide(", numSlides, ", ", i, ")");
+
+        std::cout << "  <span class=\"" << dotName << " image_dot\"" <<
+                     " onclick=\"" << slideFnName << "\"></span>\n";
+      }
+
+      std::cout << "</div> \n";
+    }
   }
 
-  for (const auto &line : endLines)
+  for (const auto &line : fileData->endLines)
     std::cout << line << "\n";
 }

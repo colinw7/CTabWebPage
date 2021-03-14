@@ -1,7 +1,7 @@
 * {box-sizing: border-box}
 
 /* Style the tab */
-.tab {
+.tab_buttons {
   float: left;
   border: 1px solid #ccc;
   background-color: #f1f1f1;
@@ -10,7 +10,7 @@
 }
 
 /* Style the buttons that are used to open the tab content */
-.tab button {
+.tab_buttons button {
   display: block;
   background-color: inherit;
   color: black;
@@ -24,17 +24,17 @@
 }
 
 /* Change background color of buttons on hover */
-.tab button:hover {
+.tab_buttons button:hover {
   background-color: #ddd;
 }
 
-/* Create an active/current "tab button" class */
-.tab button.active {
+/* Create an tab_active/current "tab button" class */
+.tab_buttons button.tab_active {
   background-color: #ccc;
 }
 
 /* Style the tab content */
-.tabcontent {
+.tab_content {
   float: left;
   padding: 0px 12px;
   border: 1px solid #ccc;
