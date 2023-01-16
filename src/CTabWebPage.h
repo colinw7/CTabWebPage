@@ -54,8 +54,8 @@ class CTabWebPage {
 
     TabData() = default;
 
-    explicit TabData(const std::string &name) :
-     name(name) {
+    explicit TabData(const std::string &name_) :
+     name(name_) {
     }
   };
 

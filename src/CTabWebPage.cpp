@@ -310,8 +310,8 @@ addFile(CFile &file)
       return true;
     }
 
-    int tagLen  = tag.length();
-    int lineLen = line.length();
+    int tagLen  = int(tag.length());
+    int lineLen = int(line.length());
 
     if (lineLen <= tagLen + 10)
       return false;
@@ -647,7 +647,7 @@ generateFile(TabFileData *fileData)
       std::cout << "\n";
       std::cout << "<!-- Full-width images with number and caption text -->\n";
 
-      int n = tabGroup->tabs.size();
+      int n = int(tabGroup->tabs.size());
 
       int i = 1;
 
